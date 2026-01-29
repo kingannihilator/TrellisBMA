@@ -188,18 +188,18 @@ def lookahead_pass(e_from, states, e_to, e_type, time_type, e_w_list, forward_va
                   
             next_priors = np.ones((T,4))
             prod_priors = np.ones(4)
-            for p_ in temp_probs:
-                prod_priors *= p_
+            for p_idx in range(T):
+                prod_priors *= temp_probs[p_idx]
                 prod_priors /= prod_priors.sum()
             for idx in range(T):
                 for idx2 in range(T):
                     if idx2 != idx:
                         next_priors[idx] *= temp_probs[idx2]
-                        
+
                 next_priors[idx] = next_priors[idx]**eps
                 next_priors[idx] /= next_priors[idx].sum()
-            
-            
+
+
             post_probs_for.append(prod_priors.copy()/prod_priors.sum())
                     
             best_symb = prod_priors.argmax()
@@ -266,8 +266,8 @@ def lookahead_pass(e_from, states, e_to, e_type, time_type, e_w_list, forward_va
             
             next_priors = np.ones((T,4))
             prod_priors = np.ones(4)
-            for p_ in temp_probs:
-                prod_priors *= p_
+            for p_idx in range(T):
+                prod_priors *= temp_probs[p_idx]
                 prod_priors /= prod_priors.sum()
             for idx in range(T):
                 for idx2 in range(T):
@@ -275,7 +275,7 @@ def lookahead_pass(e_from, states, e_to, e_type, time_type, e_w_list, forward_va
                         next_priors[idx] *= temp_probs[idx2]
                 next_priors[idx] = next_priors[idx]**eps
                 next_priors[idx] /= next_priors[idx].sum()
-                            
+
             post_probs_back.append(prod_priors.copy()/prod_priors.sum())
                     
             best_symb = prod_priors.argmax()
