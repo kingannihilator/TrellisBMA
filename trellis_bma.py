@@ -154,6 +154,135 @@ def no_lookahead_pass(e_from, states, e_to, e_type, time_type, e_w_list, forward
 
 
 @njit
+def no_lookahead_extended_pass(e_from, states, e_to, e_type, time_type, e_w_list, forward_val_list, backward_val_list, method = "add", eps = 0.1):
+    """Like no_lookahead_pass but extends forward propagation past the midpoint
+    and uses f*b for backward decisions. Fixes last-position encoder state ambiguity."""
+
+    N_in = 0
+    for tt in time_type:
+        if tt == "inp":
+            N_in += 1
+
+    # Forward pass - first half decisions (same as no_lookahead_pass)
+    n_in = 0
+    out_for = []
+    post_probs_for = []
+    midpoint_t = 0
+
+    for t in range(len(e_from)):
+        if n_in == (N_in//2):
+            midpoint_t = t
+            break
+        if time_type[t+1] == "inp":
+            n_in += 1
+            if method == "add":
+                temp_probs = np.zeros(4)
+            elif method == "multiply":
+                temp_probs = np.ones(4)
+            for f in forward_val_list:
+                temp_probs_trace = np.zeros(4)
+                for idx in range(states[t].shape[0]):
+                    state = states[t][idx]
+                    a = state[-2]
+                    temp_probs_trace[a] += f[t][idx]
+                if method == "add":
+                    temp_probs += temp_probs_trace
+                elif method == "multiply":
+                    temp_probs *= temp_probs_trace
+            post_probs_for.append(temp_probs.copy()/temp_probs.sum())
+
+            best_symb = temp_probs.argmax()
+            out_for.append(best_symb)
+            for idx in range(states[t].shape[0]):
+                state = states[t][idx]
+                a = state[-2]
+                for f in forward_val_list:
+                    if a != best_symb:
+                        f[t][idx] *= eps
+
+        for f in forward_val_list:
+            f[t] /= f[t].sum()
+
+        for idx in range(len(forward_val_list)):
+            f = forward_val_list[idx]
+            for i in range(len(e_from[t])):
+                from_idx = e_from[t][i]
+                to_idx = e_to[t][i]
+                if e_type[t][i] == "ins":
+                    f[t][to_idx] += (f[t][from_idx] * e_w_list[idx][t][i])
+                else:
+                    f[t+1][to_idx] += (f[t][from_idx] * e_w_list[idx][t][i])
+            f[t] /= f[t].sum()
+
+    # Continue forward propagation to the end (no decisions)
+    for t in range(midpoint_t, len(e_from)):
+        for idx in range(len(forward_val_list)):
+            f = forward_val_list[idx]
+            for i in range(len(e_from[t])):
+                from_idx = e_from[t][i]
+                to_idx = e_to[t][i]
+                if e_type[t][i] == "ins":
+                    f[t][to_idx] += (f[t][from_idx] * e_w_list[idx][t][i])
+                else:
+                    f[t+1][to_idx] += (f[t][from_idx] * e_w_list[idx][t][i])
+            f[t] /= f[t].sum()
+
+    # Backward pass - second half decisions using f*b
+    out_back = []
+    post_probs_back = []
+
+    n_in = 0
+    for t in range(len(e_from)-1,0,-1):
+        if n_in == (N_in//2):
+            break
+        for idx in range(len(backward_val_list)):
+            b = backward_val_list[idx]
+            for i in range(len(e_from[t])-1,-1,-1):
+                from_idx = e_from[t][i]
+                to_idx = e_to[t][i]
+                if e_type[t][i] == "ins":
+                    b[t][from_idx] += (b[t][to_idx] * e_w_list[idx][t][i])
+                else:
+                    b[t][from_idx] += (b[t+1][to_idx] * e_w_list[idx][t][i])
+            b[t] /= b[t].sum()
+
+        if time_type[t-1] == "inp":
+            n_in += 1
+            if method == "add":
+                temp_probs = np.zeros(4)
+            elif method == "multiply":
+                temp_probs = np.ones(4)
+            for trace_idx in range(len(backward_val_list)):
+                f = forward_val_list[trace_idx]
+                b = backward_val_list[trace_idx]
+                temp_probs_trace = np.zeros(4)
+                for idx in range(states[t].shape[0]):
+                    state = states[t][idx]
+                    a = state[-2]
+                    temp_probs_trace[a] += f[t][idx] * b[t][idx]
+                if method == "add":
+                    temp_probs += temp_probs_trace
+                elif method == "multiply":
+                    temp_probs *= temp_probs_trace
+            post_probs_back.append(temp_probs.copy()/temp_probs.sum())
+            best_symb = temp_probs.argmax()
+            out_back.append(best_symb)
+            for idx in range(states[t].shape[0]):
+                state = states[t][idx]
+                a = state[-2]
+                for b in backward_val_list:
+                    if a != best_symb:
+                        b[t][idx] *= eps
+
+            for b in backward_val_list:
+                b[t] /= b[t].sum()
+
+    out = out_for + out_back[::-1]
+    post_probs = post_probs_for + post_probs_back[::-1]
+    return np.array(out), post_probs
+
+
+@njit
 def lookahead_pass(e_from, states, e_to, e_type, time_type, e_w_list, forward_val_list, backward_val_list, method = "add", eps = 0.1):
     
     N_in = 0
@@ -418,7 +547,7 @@ def lookahead_pass(e_from, states, e_to, e_type, time_type, e_w_list, forward_va
 #     return np.array(out), post_probs
 
 
-def trellis_bma(trellis, traces, enc_init_state, enc_end_states, lookahead = False, method = "multiply", eps = 1.0):
+def trellis_bma(trellis, traces, enc_init_state, enc_end_states, lookahead = False, extend_forward = False, method = "multiply", eps = 1.0):
     
     # Reassigning simple names to useful trellis attributes
     p_rep = trellis.p_rep
@@ -478,6 +607,9 @@ def trellis_bma(trellis, traces, enc_init_state, enc_end_states, lookahead = Fal
     
     if lookahead:
         out, post_probs = lookahead_pass(e_from, states, e_to, e_type, time_type, e_w_typed,\
+                                forward_val_typed, backward_val_typed)
+    elif extend_forward:
+        out, post_probs = no_lookahead_extended_pass(e_from, states, e_to, e_type, time_type, e_w_typed,\
                                 forward_val_typed, backward_val_typed)
     else:
         out, post_probs = no_lookahead_pass(e_from, states, e_to, e_type, time_type, e_w_typed,\

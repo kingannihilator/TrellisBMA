@@ -53,8 +53,10 @@ from Levenshtein import editops
 # Must match the encoding parameters
 DEFAULT_G = np.array([[1, 1, 1], [1, 2, 1]])
 
-DEFAULT_MAX_DRIFT = 4
+DEFAULT_MAX_DRIFT = 3
 DEFAULT_MAX_TRACES = 7
+LOOKAHEAD = False
+EXTEND_FORWARD = True
 
 # Global trellis cache: key = (in_len, num_traces, max_drift), value = (cc, ids_trellis)
 _TRELLIS_CACHE = {}
@@ -111,7 +113,8 @@ def _build_trellis(in_len, num_traces, G=None, p_del=0.02, p_ins=0.02, p_sub=0.0
 
 
 def reconstruct_cluster(traces, in_len=None, G=None, p_del=None, p_ins=None, p_sub=None,
-                        max_drift=None, method='trellis-bma', return_probs=False, max_traces=10):
+                        max_drift=None, method='trellis-bma', return_probs=False, max_traces=10,
+                        extend_forward=False):
     """
     Reconstruct DNA from a cluster of noisy traces.
 
@@ -205,7 +208,8 @@ def reconstruct_cluster(traces, in_len=None, G=None, p_del=None, p_ins=None, p_s
             normalized_traces,
             cc.trellis_states[0][0],
             cc.trellis_states[-1],
-            lookahead=True
+            lookahead=LOOKAHEAD,
+            extend_forward=extend_forward
         )
     else:
         raise ValueError(f"Unknown method: {method}. Use 'bcjr' or 'trellis-bma'")
@@ -218,7 +222,8 @@ def reconstruct_cluster(traces, in_len=None, G=None, p_del=None, p_ins=None, p_s
 
 
 def reconstruct_clusters(clusters, in_len=None, G=None, p_del=None, p_ins=None, p_sub=None,
-                         max_drift=None, method='trellis-bma', verbose=False, max_traces=10):
+                         max_drift=None, method='trellis-bma', verbose=False, max_traces=10,
+                         extend_forward=False):
     """
     Reconstruct DNA from multiple clusters.
 
@@ -246,7 +251,8 @@ def reconstruct_clusters(clusters, in_len=None, G=None, p_del=None, p_ins=None, 
 
         cluster_start = time.time()
         reconstructed = reconstruct_cluster(
-            cluster, in_len, G, p_del, p_ins, p_sub, max_drift, method, max_traces=max_traces
+            cluster, in_len, G, p_del, p_ins, p_sub, max_drift, method, max_traces=max_traces,
+                extend_forward=extend_forward
         )
         results.append(reconstructed)
 
@@ -416,6 +422,13 @@ def main():
         help='Reconstruction method: trellis-bma (default, linear complexity) or bcjr (exact, exponential)'
     )
     parser.add_argument(
+        '--extend-forward',
+        action='store_true',
+        default=EXTEND_FORWARD,
+        help='Extend forward propagation past midpoint and use f*b for backward decisions. '
+             'Fixes last-position errors at ~1.5x cost (vs 3x for full lookahead). Default: off.'
+    )
+    parser.add_argument(
         '--verbose', '-v',
         action='store_true',
         help='Print progress information'
@@ -474,7 +487,8 @@ def main():
         max_drift=args.max_drift,
         method=args.method,
         verbose=args.verbose,
-        max_traces=args.max_traces
+        max_traces=args.max_traces,
+        extend_forward=args.extend_forward
     )
     print(f"Time taken for reconstruction: {time.time() - start:.2f} seconds")
 
