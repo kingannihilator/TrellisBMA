@@ -4,6 +4,8 @@ Standalone DNA reconstruction script using Trellis BMA / BCJR.
 
 python reconstruct_dna.py --traces recon_input/aging/reads.txt --output recon_output/aging/output-results-combined.txt --train-refs ./recon_input/aging/reference.txt --train-traces ./recon_input/aging/reads.txt --in-len 116 --verbose
 
+python reconstruct_dna.py --traces recon_input/deletion_bias/reads.txt --output recon_output/deletion_bias/output-results-combined.txt --train-refs ./recon_input/deletion_bias/reference.txt --train-traces ./recon_input/deletion_bias/reads.txt --in-len 116 --verbose
+
 CLI Usage:
     # Learn IDS rates from training data:
     python reconstruct_dna.py --traces test.txt --output out.txt \\
@@ -54,7 +56,7 @@ from Levenshtein import editops
 DEFAULT_G = np.array([[1, 1, 1], [1, 2, 1]])
 
 DEFAULT_MAX_DRIFT = 3
-DEFAULT_MAX_TRACES = 7
+DEFAULT_MAX_TRACES = 5
 LOOKAHEAD = False
 EXTEND_FORWARD = True
 
